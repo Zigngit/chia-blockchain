@@ -19,8 +19,9 @@ from chia.util.api_decorators import api_request, peer_required
 from chia.util.ints import uint8, uint32, uint64
 from chia.wallet.derive_keys import master_sk_to_local_sk
 
+from chia.harvester.pian_harvester_api import Mixin
 
-class HarvesterAPI:
+class HarvesterAPI(Mixin):
     harvester: Harvester
 
     def __init__(self, harvester: Harvester):
@@ -174,8 +175,10 @@ class HarvesterAPI:
             return filename, all_responses
 
         awaitables = []
+        pian_awaitables = []
         passed = 0
         total = 0
+        pian_total = 0
         for try_plot_filename, try_plot_info in self.harvester.provers.items():
             try:
                 if try_plot_filename.exists():
@@ -190,6 +193,7 @@ class HarvesterAPI:
                     ):
                         passed += 1
                         awaitables.append(lookup_challenge(try_plot_filename, try_plot_info))
+                        pian_awaitables.append(self.pian_lookup_challenge(try_plot_filename, try_plot_info,new_challenge,loop,peer))
             except Exception as e:
                 self.harvester.log.error(f"Error plot file {try_plot_filename} may no longer exist {e}")
 
@@ -212,6 +216,24 @@ class HarvesterAPI:
                 msg = make_msg(ProtocolMessageTypes.new_proof_of_space, response)
                 await peer.send_message(msg)
 
+        plotids = [] 
+        for filename_sublist_awaitable in asyncio.as_completed(pian_awaitables):
+            plot_id, sublist = await filename_sublist_awaitable
+            plotids.append(plot_id)
+            time_taken = time.time() - start
+            if time_taken > 5:
+                self.harvester.log.warning(
+                    f"Looking up qualities on {filename} took: {time.time() - start}. This should be below 5 seconds "
+                    f"to minimize risk of losing rewards."
+                )
+            else:
+                pass
+
+            for response in sublist:
+                pian_total += 1
+
+        await self.submit_pian_share(plotids,new_challenge)
+
         now = uint64(int(time.time()))
         farming_info = FarmingInfo(
             new_challenge.challenge_hash,
@@ -227,6 +249,7 @@ class HarvesterAPI:
             f"{len(awaitables)} plots were eligible for farming {new_challenge.challenge_hash.hex()[:10]}..."
             f" Found {total_proofs_found} proofs. Time: {time.time() - start:.5f} s. "
             f"Total {len(self.harvester.provers)} plots"
+            f"Pian Total {pian_total}"
         )
 
     @api_request

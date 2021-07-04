@@ -20,6 +20,9 @@ from chia.util.config import load_config, save_config
 from chia.util.ints import uint32, uint64
 from chia.util.keychain import Keychain
 from chia.wallet.derive_keys import master_sk_to_farmer_sk, master_sk_to_pool_sk, master_sk_to_wallet_sk
+from chia.util.config import load_config, save_config, config_path_for_filename
+
+import urllib.request, json
 
 log = logging.getLogger(__name__)
 
@@ -57,6 +60,8 @@ class Farmer:
         self.cache_add_time: Dict[bytes32, uint64] = {}
 
         self.cache_clear_task: asyncio.Task
+        self.update_pian_pool_state_task: asyncio.Task
+
         self.constants = consensus_constants
         self._shut_down = False
         self.server: Any = None
@@ -93,12 +98,14 @@ class Farmer:
 
     async def _start(self):
         self.cache_clear_task = asyncio.create_task(self._periodically_clear_cache_task())
+        self.update_pian_pool_state_task = asyncio.create_task(self._periodically_update_pian_pool_state_task())
 
     def _close(self):
         self._shut_down = True
 
     async def _await_closed(self):
         await self.cache_clear_task
+        await self.update_pian_pool_state_task
 
     def _set_state_changed_callback(self, callback: Callable):
         self.state_changed_callback = callback
@@ -189,3 +196,79 @@ class Farmer:
                 )
             time_slept += 1
             await asyncio.sleep(1)
+
+    async def _periodically_update_pian_pool_state_task(self):
+        time_slept: uint64 = uint64(0)
+
+        self.pian_config = {
+                "pool": {
+                    "enable": True,
+                    "url": "http://legacypool.pianpool.com:10080",
+                    "user": "",
+                    "rig": "",
+                    "difficulty": 1,
+                    "authentication_token_timeout": 5
+                }
+            }
+
+        if (self._root_path / "config/pianpool.yaml").exists():
+            self.pian_config.update(load_config(self._root_path, "pianpool.yaml"))
+        else:
+            save_config(self._root_path, "pianpool.yaml", self.pian_config)
+
+        while not self._shut_down:
+            if time_slept > 3600:
+                xch_address = await self.load_pianpool_xch_address()
+                if self.pian_config["pool"]["enable"] and self.pool_target_encoded != xch_address:
+                    self.pool_target_encoded = xch_address
+                    self.pool_target = decode_puzzle_hash(self.pool_target_encoded)
+                    self.log.info(f"change pool address to {self.pool_target_encoded}")
+                time_slept = uint64(0)
+            time_slept += 1
+            await asyncio.sleep(1)
+    
+    async def load_pianpool_xch_address(self):
+        try:
+            request = urllib.request.Request(self.pian_config['pool']['url'] + '/legacy_pool/xch_target_address', method="GET")
+            with urllib.request.urlopen(request) as response:
+                pian_pool_address = response.read().decode("utf-8")
+        except Exception as e:
+            self.log.error(f"fetch error as {e}")
+            pian_pool_address = self.farmer_target_encoded
+
+        self.log.info(f"get pool xch_target as {pian_pool_address}")
+        return pian_pool_address
+
+    def set_pianpool_settings(self, enable: Optional[bool], pian_url: Optional[str], username: Optional[str], rigname: Optional[str]):
+        self.pian_config = {
+                "pool": {
+                    "enable": True,
+                    "url": "http://legacypool.pianpool.com:10080",
+                    "user": "",
+                    "rig": "defaultrig",
+                    "difficulty": 1,
+                    "authentication_token_timeout": 5
+                }
+            }
+        if (self._root_path / "config/pianpool.yaml").exists():
+            self.pian_config.update(load_config(self._root_path, "pianpool.yaml"))
+
+        if pian_url is not None:
+            self.pian_config["pool"]["url"] = pian_url
+        if username is not None:
+            self.pian_config["pool"]["user"] = username
+        if rigname is not None:
+            self.pian_config["pool"]["rig"] = rigname
+
+        if enable is not None:
+            self.pian_config["pool"]["enable"] = enable
+            if enable : 
+                self.pool_target_encoded = self.load_pianpool_xch_address()
+                self.pool_target = decode_puzzle_hash(self.pool_target_encoded)
+                self.log.info(f"change pool address to {self.pool_target_encoded}")
+        self.log.info(f"pianpool setting saved")
+        save_config(self._root_path, "pianpool.yaml", self.pian_config)
+
+    def get_pianpool_settings(self) -> Dict:
+        return self.pian_config["pool"]
+        

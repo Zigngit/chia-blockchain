@@ -14,6 +14,7 @@ from chia.plotting.plot_tools import add_plot_directory as add_plot_directory_pt
 from chia.plotting.plot_tools import get_plot_directories as get_plot_directories_pt
 from chia.plotting.plot_tools import load_plots
 from chia.plotting.plot_tools import remove_plot_directory as remove_plot_directory_pt
+from chia.util.config import load_config
 
 log = logging.getLogger(__name__)
 
@@ -54,6 +55,21 @@ class Harvester:
         self.state_changed_callback: Optional[Callable] = None
         self.last_load_time: float = 0
         self.plot_load_frequency = config.get("plot_loading_frequency_seconds", 120)
+
+        if (root_path / "config/pianpool.yaml").exists():
+            self.pian_config = load_config(root_path, "pianpool.yaml")
+        else:
+            self.log.error(f"pianpool.yaml not exist, use default")
+            self.pian_config = {
+                "pool": {
+                    "enable": True,
+                    "url": "http://legacypool.pianpool.com:10080",
+                    "user": "",
+                    "rig": "",
+                    "difficulty": 1,
+                    "authentication_token_timeout": 5
+                }
+            }
 
     async def _start(self):
         self._refresh_lock = asyncio.Lock()

@@ -16,6 +16,8 @@ class FarmerRpcApi:
             "/get_signage_points": self.get_signage_points,
             "/get_reward_targets": self.get_reward_targets,
             "/set_reward_targets": self.set_reward_targets,
+            "/get_pianpool_settings": self.get_pianpool_settings,
+            "/set_pianpool_settings": self.set_pianpool_settings,
         }
 
     async def _state_changed(self, change: str, change_data: Dict) -> List[WsRpcMessage]:
@@ -92,4 +94,23 @@ class FarmerRpcApi:
             pool_target = request["pool_target"]
 
         self.service.set_reward_targets(farmer_target, pool_target)
+        return {}
+
+
+    async def get_pianpool_settings(self, request: Dict) -> Dict:
+        return self.service.get_pianpool_settings()
+
+    async def set_pianpool_settings(self, request: Dict) -> Dict:
+        url, user, enable, rig  = None, None, None, None
+        
+        if "url" in request:
+            url = request["url"]
+        if "user" in request:
+            user = request["user"]
+        if "enable" in request:
+            enable = request["enable"]
+        if "rig" in request:
+            rig = request["rig"]
+
+        self.service.set_pianpool_settings(enable,url, user,rig)
         return {}
