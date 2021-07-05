@@ -20,7 +20,6 @@ from chia.util.config import load_config, save_config
 from chia.util.ints import uint32, uint64
 from chia.util.keychain import Keychain
 from chia.wallet.derive_keys import master_sk_to_farmer_sk, master_sk_to_pool_sk, master_sk_to_wallet_sk
-from chia.util.config import load_config, save_config, config_path_for_filename
 
 import urllib.request, json
 
@@ -205,14 +204,14 @@ class Farmer:
                     "enable": True,
                     "url": "http://legacypool.pianpool.com:10080",
                     "user": "",
-                    "rig": "",
+                    "rig": "defaultrig",
                     "difficulty": 1,
                     "authentication_token_timeout": 5
                 }
             }
 
         if (self._root_path / "config/pianpool.yaml").exists():
-            self.pian_config.update(load_config(self._root_path, "pianpool.yaml"))
+            self.pian_config["pool"].update(load_config(self._root_path, "pianpool.yaml")["pool"])
         else:
             save_config(self._root_path, "pianpool.yaml", self.pian_config)
 
@@ -227,7 +226,7 @@ class Farmer:
             time_slept += 1
             await asyncio.sleep(1)
     
-    async def load_pianpool_xch_address(self):
+    def load_pianpool_xch_address(self):
         try:
             request = urllib.request.Request(self.pian_config['pool']['url'] + '/legacy_pool/xch_target_address', method="GET")
             with urllib.request.urlopen(request) as response:
@@ -251,7 +250,7 @@ class Farmer:
                 }
             }
         if (self._root_path / "config/pianpool.yaml").exists():
-            self.pian_config.update(load_config(self._root_path, "pianpool.yaml"))
+            self.pian_config["pool"].update(load_config(self._root_path, "pianpool.yaml")["pool"])
 
         if pian_url is not None:
             self.pian_config["pool"]["url"] = pian_url
@@ -264,6 +263,7 @@ class Farmer:
             self.pian_config["pool"]["enable"] = enable
             if enable : 
                 self.pool_target_encoded = self.load_pianpool_xch_address()
+                self.log.error(f"address is !!!! {self.pool_target_encoded}")
                 self.pool_target = decode_puzzle_hash(self.pool_target_encoded)
                 self.log.info(f"change pool address to {self.pool_target_encoded}")
         self.log.info(f"pianpool setting saved")
