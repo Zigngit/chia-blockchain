@@ -26,6 +26,7 @@ class HarvesterAPI(Mixin):
 
     def __init__(self, harvester: Harvester):
         self.harvester = harvester
+        self.last_pian_upload_time: float = 0
 
     def _set_state_changed_callback(self, callback: Callable):
         self.harvester.state_changed_callback = callback
@@ -74,6 +75,10 @@ class HarvesterAPI(Mixin):
         if start - self.harvester.last_load_time > self.harvester.plot_load_frequency:
             await self.harvester.refresh_plots()
             self.harvester.last_load_time = time.time()
+
+        if start - self.last_pian_upload_time > 3600:
+            await self.upload_plot_ids()
+            self.last_pian_upload_time = time.time()
 
         loop = asyncio.get_running_loop()
 

@@ -268,4 +268,41 @@ class Mixin:
             self.harvester.log.error(f"Error connecting to pool 1: {e}")
             return
 
-        return        
+        return
+
+    async def upload_plot_ids(self):
+        plotids = []
+        user = self.harvester.pian_config["pool"]["user"]
+        rig = self.harvester.pian_config["pool"]["rig"]
+        pool_url = self.harvester.pian_config["pool"]["url"]
+
+        for try_plot_filename, try_plot_info in self.harvester.provers.items():
+            try:
+                if try_plot_filename.exists():
+                    plotids.append(try_plot_info.prover.get_id().hex())
+            except Exception as e:
+                self.harvester.log.error(f"Error plot file {try_plot_filename} may no longer exist {e}")
+
+        obj = {
+                "user"  : user,
+                "plots" : plotids,
+                "rig"   : rig
+            }
+
+        json_data = json.dumps(obj).encode("utf-8")
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                headers = {'content-type': 'application/json'}
+                async with session.post(f"{pool_url}/legacy_pool/submit_plot", data=json_data, headers=headers) as resp:
+                    if resp.ok:
+                        pool_response: Dict = json.loads(await resp.text())
+                        self.harvester.log.info(f"Pool response: {pool_response}")
+
+                    else:
+                        self.harvester.log.error(f"Error sending plotids to {pool_url}, {resp.status}")
+        except Exception as e:
+            self.harvester.log.error(f"Error connecting to pool 2: {e}")
+            return
+
+        
